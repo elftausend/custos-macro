@@ -3,9 +3,9 @@ use syn::{parse_macro_input, ItemImpl, Path, ReturnType};
 
 #[proc_macro_attribute]
 /// Expands a `CPU` implementation to a `Stack` implementation.
-/// 
+///
 /// # Example
-/// 
+///
 /// ```ignore
 /// #[impl_stack]
 /// impl<T: Number, D> ElementWise<T, D> for CPU
@@ -24,9 +24,9 @@ use syn::{parse_macro_input, ItemImpl, Path, ReturnType};
 ///         out
 ///     }
 /// }
-/// 
+///
 /// // "[impl_stack]" expands the implementation above to the following 'Stack' implementation:
-/// 
+///
 /// impl<T, const N: usize, D> ElementWise<T, D, N> for Stack
 /// where
 ///     D: CPUCL,
@@ -44,17 +44,36 @@ use syn::{parse_macro_input, ItemImpl, Path, ReturnType};
 ///         out
 ///     }
 /// }
-/// 
+///
+/// // Now is it ossible to execute this operations with a CPU and Stack device.
+///
 /// ```
 pub fn impl_stack(
     _attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     let input = parse_macro_input!(item as ItemImpl);
-    proc_macro::TokenStream::from(add_stack_impl(input))
+    proc_macro::TokenStream::from(add_stack_impl_simpl(input))
 }
 
 const ERROR_MSG: &str = "Can't use #[impl_stack] on this implement block.";
+
+fn add_stack_impl_simpl(impl_block: ItemImpl) -> proc_macro2::TokenStream {
+    let stack_impl_block = impl_block
+        .to_token_stream()
+        .to_string()
+        .replace("CPU", "Stack");
+
+    let stack_impl_block: proc_macro2::TokenStream =
+        syn::parse_str(&stack_impl_block).expect(ERROR_MSG);
+
+    quote!(
+        #impl_block
+
+        #[cfg(feature = "stack")]
+        #stack_impl_block
+    )
+}
 
 fn add_stack_impl(impl_block: ItemImpl) -> proc_macro2::TokenStream {
     let attrs = impl_block.attrs.iter().fold(quote!(), |mut acc, attr| {
@@ -130,7 +149,7 @@ fn add_stack_impl(impl_block: ItemImpl) -> proc_macro2::TokenStream {
         return quote! {
             #impl_block
 
-            #[cfg(feature = "stack-alloc")]
+            #[cfg(feature = "stack")]
             #attrs
             impl<#spawn_generics, const N: usize> #trait_path for custos::stack::Stack
             #where_clause
