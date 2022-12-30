@@ -1,5 +1,5 @@
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, ItemImpl, Path, ReturnType};
+use syn::{parse_macro_input, ItemImpl};
 
 #[proc_macro_attribute]
 /// Expands a `CPU` implementation to a `Stack` implementation.
@@ -8,44 +8,45 @@ use syn::{parse_macro_input, ItemImpl, Path, ReturnType};
 ///
 /// ```ignore
 /// #[impl_stack]
-/// impl<T: Number, D> ElementWise<T, D> for CPU
+/// impl<T, D, const N: usize> ElementWise<T, D, N> for CPU
 /// where
-///     D: CPUCL,
+///     T: Number,
+///     D: MainMemory,
 /// {
-///     fn add(&self, lhs: &Buffer<T, D>, rhs: &Buffer<T, D>) -> Buffer<T, CPU> {
+///     fn add(&self, lhs: &Buffer<T, D, N>, rhs: &Buffer<T, D, N>) -> Buffer<T, CPU, N> {
 ///         let mut out = self.retrieve(lhs.len, (lhs, rhs));
 ///         cpu_element_wise(lhs, rhs, &mut out, |o, a, b| *o = a + b);
 ///         out
 ///     }
-///     
-///     fn mul(&self, lhs: &Buffer<T, D>, rhs: &Buffer<T, D>) -> Buffer<T, CPU> {
+/// 
+///     fn mul(&self, lhs: &Buffer<T, D, N>, rhs: &Buffer<T, D, N>) -> Buffer<T, CPU, N> {
 ///         let mut out = self.retrieve(lhs.len, (lhs, rhs));
 ///         cpu_element_wise(lhs, rhs, &mut out, |o, a, b| *o = a * b);
 ///         out
 ///     }
 /// }
-///
-/// // "[impl_stack]" expands the implementation above to the following 'Stack' implementation:
-///
-/// impl<T, const N: usize, D> ElementWise<T, D, N> for Stack
+/// 
+/// '#[impl_stack]' expands the implementation above to the following 'Stack' implementation:
+/// 
+/// impl<T, D, const N: usize> ElementWise<T, D, N> for Stack
 /// where
-///     D: CPUCL,
-///     Stack: Alloc<T, N>
+///     T: Number,
+///     D: MainMemory,
 /// {
 ///     fn add(&self, lhs: &Buffer<T, D, N>, rhs: &Buffer<T, D, N>) -> Buffer<T, Stack, N> {
 ///         let mut out = self.retrieve(lhs.len, (lhs, rhs));
 ///         cpu_element_wise(lhs, rhs, &mut out, |o, a, b| *o = a + b);
 ///         out
 ///     }
-///     
+/// 
 ///     fn mul(&self, lhs: &Buffer<T, D, N>, rhs: &Buffer<T, D, N>) -> Buffer<T, Stack, N> {
 ///         let mut out = self.retrieve(lhs.len, (lhs, rhs));
 ///         cpu_element_wise(lhs, rhs, &mut out, |o, a, b| *o = a * b);
 ///         out
 ///     }
 /// }
-///
-/// // Now is it ossible to execute this operations with a CPU and Stack device.
+/// 
+/// // Now is it possible to execute this operations with a CPU and Stack device.
 ///
 /// ```
 pub fn impl_stack(
@@ -68,12 +69,15 @@ fn add_stack_impl_simpl(impl_block: ItemImpl) -> proc_macro2::TokenStream {
         syn::parse_str(&stack_impl_block).expect(ERROR_MSG);
 
     quote!(
+        #[cfg(feature = "cpu")]
         #impl_block
 
         #[cfg(feature = "stack")]
         #stack_impl_block
     )
 }
+
+/*
 
 fn add_stack_impl(impl_block: ItemImpl) -> proc_macro2::TokenStream {
     let attrs = impl_block.attrs.iter().fold(quote!(), |mut acc, attr| {
@@ -174,3 +178,5 @@ fn insert_const_n_to_buf<R: syn::parse::Parse + Clone>(tokens: proc_macro2::Toke
     tokens.insert_str(idx - 1, ", N ");
     syn::parse_str(&tokens).unwrap()
 }
+
+*/
