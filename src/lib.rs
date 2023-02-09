@@ -2,24 +2,25 @@ use quote::{quote, ToTokens};
 use syn::{parse_macro_input, ItemImpl};
 
 #[proc_macro_attribute]
-/// Expands a `CPU` implementation to a `Stack` implementation.
+/// Expands a `CPU` implementation to a `Stack` and `CPU` implementation.
 ///
 /// # Example
 ///
 /// ```ignore
 /// #[impl_stack]
-/// impl<T, D, const N: usize> ElementWise<T, D, N> for CPU
+/// impl<T, D, S> ElementWise<T, D, S> for CPU
 /// where
 ///     T: Number,
 ///     D: MainMemory,
+///     S: Shape
 /// {
-///     fn add(&self, lhs: &Buffer<T, D, N>, rhs: &Buffer<T, D, N>) -> Buffer<T, CPU, N> {
+///     fn add(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, CPU, S> {
 ///         let mut out = self.retrieve(lhs.len, (lhs, rhs));
 ///         cpu_element_wise(lhs, rhs, &mut out, |o, a, b| *o = a + b);
 ///         out
 ///     }
 /// 
-///     fn mul(&self, lhs: &Buffer<T, D, N>, rhs: &Buffer<T, D, N>) -> Buffer<T, CPU, N> {
+///     fn mul(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, CPU, S> {
 ///         let mut out = self.retrieve(lhs.len, (lhs, rhs));
 ///         cpu_element_wise(lhs, rhs, &mut out, |o, a, b| *o = a * b);
 ///         out
@@ -28,18 +29,19 @@ use syn::{parse_macro_input, ItemImpl};
 /// 
 /// '#[impl_stack]' expands the implementation above to the following 'Stack' implementation:
 /// 
-/// impl<T, D, const N: usize> ElementWise<T, D, N> for Stack
+/// impl<T, D, S> ElementWise<T, D, S> for Stack
 /// where
 ///     T: Number,
 ///     D: MainMemory,
+///     S: Shape
 /// {
-///     fn add(&self, lhs: &Buffer<T, D, N>, rhs: &Buffer<T, D, N>) -> Buffer<T, Stack, N> {
+///     fn add(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, Stack, S> {
 ///         let mut out = self.retrieve(lhs.len, (lhs, rhs));
 ///         cpu_element_wise(lhs, rhs, &mut out, |o, a, b| *o = a + b);
 ///         out
 ///     }
 /// 
-///     fn mul(&self, lhs: &Buffer<T, D, N>, rhs: &Buffer<T, D, N>) -> Buffer<T, Stack, N> {
+///     fn mul(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, Stack, S> {
 ///         let mut out = self.retrieve(lhs.len, (lhs, rhs));
 ///         cpu_element_wise(lhs, rhs, &mut out, |o, a, b| *o = a * b);
 ///         out
