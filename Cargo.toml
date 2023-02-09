@@ -2,6 +2,7 @@
 name = "custos-macro"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "A macro crate for custos."
 repository = "https://github.com/elftausend/custos-macro"
 keywords = ["macro"]
