@@ -1,5 +1,5 @@
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, ItemImpl};
+use syn::{parse_macro_input, ItemImpl, ItemFn};
 
 #[proc_macro_attribute]
 /// Expands a `CPU` implementation to a `Stack` and `CPU` implementation.
@@ -77,6 +77,36 @@ fn add_stack_impl_simpl(impl_block: ItemImpl) -> proc_macro2::TokenStream {
         #[cfg(feature = "stack")]
         #stack_impl_block
     )
+}
+
+#[proc_macro_attribute]
+pub fn stack_cpu_test(
+    _attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(item as ItemFn);
+    proc_macro::TokenStream::from(add_stack_cpu_test(input))
+}
+
+const STACK_CPU_TEST_ERROR_MSG: &str = "Can't use #[stack_cpu_test] on this implement block.";
+
+fn add_stack_cpu_test(input: ItemFn) -> proc_macro2::TokenStream {
+    let stack_test_block = input
+        .to_token_stream()
+        .to_string()
+        .replace("cpu", "stack")
+        .replace("CPU :: new()", "custos::Stack");
+
+    let stack_test_block: proc_macro2::TokenStream =
+        syn::parse_str(&stack_test_block).expect(STACK_CPU_TEST_ERROR_MSG);
+
+    quote! {
+        #[cfg(feature = "cpu")]
+        #input
+
+        #[cfg(feature = "stack")]
+        #stack_test_block
+    }
 }
 
 /*
