@@ -1,6 +1,6 @@
 [package]
 name = "custos-macro"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 description = "A macro crate for custos."
@@ -14,5 +14,5 @@ proc-macro = true
 
 [dependencies]
 proc-macro2 = "1.0"
-syn = {version="1.0", features=["full"]}
+syn = {version="2.0", features=["full"]}
 quote = "1.0"
