@@ -1,4 +1,4 @@
-use proc_macro2::{TokenStream, Ident};
+use proc_macro2::{Ident, TokenStream};
 use quote::{quote, ToTokens};
 use syn::{parse_macro_input, ExprArray, ItemFn, ItemImpl, ItemTrait, Signature, TraitItem};
 
@@ -125,22 +125,29 @@ fn add_nnapi_op_impl(
     mut input: ItemTrait,
     attr: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
-    let attr = attr
+    let mut op_enum_count = 0;
+
+    let op_enum_ts = attr
         .into_iter()
-        .map(|attr| match attr {
-            proc_macro2::TokenTree::Ident(ident) => quote!(OperationCode::#ident),
-            proc_macro2::TokenTree::Punct(punct) => quote!(#punct),
-            _ => panic!("Invalid"),
+        .map(|attr| {
+            op_enum_count += 1;
+            match attr {
+                proc_macro2::TokenTree::Ident(ident) => quote!(OperationCode::#ident),
+                proc_macro2::TokenTree::Punct(punct) => quote!(#punct),
+                _ => panic!("Invalid"),
+            }
         })
         .collect::<proc_macro2::TokenStream>();
 
-    let array = quote! {
-        [#attr]
+    if op_enum_count != input.items.len() {
+        panic!("The length of the provided operations does not match with the number of methods.")
+    }
+
+    let op_enums_ts_arr = quote! {
+        [#op_enum_ts]
     };
 
-    let array = syn::parse2::<ExprArray>(array).unwrap();
-
-    array.elems.into_iter();
+    let array = syn::parse2::<ExprArray>(op_enums_ts_arr).unwrap();
 
     let ident = &input.ident;
 
@@ -168,7 +175,8 @@ fn add_nnapi_op_impl(
         <#ident_generics>
     );
 
-    let output_generic: Ident = syn::parse_str(output_generic).expect("Should be 'S' or 'OS', which is fine to parse to an Ident");
+    let output_generic: Ident = syn::parse_str(output_generic)
+        .expect("Should be 'S' or 'OS', which is fine to parse to an Ident");
 
     let lhs_generics = &input
         .generics
@@ -180,21 +188,20 @@ fn add_nnapi_op_impl(
                 syn::GenericParam::Type(ty) => {
                     ty.default = None;
                     ty.to_token_stream()
-                },
-                _ => param.to_token_stream()
+                }
+                _ => param.to_token_stream(),
             };
             acc.extend(quote!(#param,));
             acc
         });
 
     // panic!("lhs_generic: {:?}", lhs_generics.to_string());
-
-
-
     // panic!("{:?}", generics.type_params().map(|x| x.ident.to_token_stream().to_string()).collect::<Vec<_>>());
 
     // methods
     // panic!("{:?}", input.items.iter().map(|x| x.to_token_stream().to_string()).collect::<Vec<_>>());
+
+    let mut op_enums = array.elems.into_iter();
 
     let methods = &input
         .items
@@ -202,17 +209,51 @@ fn add_nnapi_op_impl(
         .map(|item| match item {
             TraitItem::Fn(function) => {
                 let fun = &function.sig;
+
+                let param_idents = fun
+                    .inputs
+                    .iter()
+                    .flat_map(|input| match input {
+                        syn::FnArg::Typed(ty) => {
+                            if !ty.ty.to_token_stream().to_string().contains("Buffer <") {
+                                return None;
+                            }
+                            Some(
+                                syn::parse2::<Ident>(ty.pat.to_token_stream())
+                                    .expect("Invalid ident"),
+                            )
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+
+                let param_idents = param_idents.into_iter().map(|param_ident| quote!(#param_ident.ptr.idx,)).collect::<TokenStream>();
+
+                let param_idents = quote!([#param_idents]);
+
                 let signature_replaced = fun
                     .to_token_stream()
                     .to_string()
                     .replace("D", "custos::NnapiDevice");
 
                 let stack_test_block: Signature = syn::parse_str(&signature_replaced).expect("");
+                let op_enum = op_enums
+                    .next()
+                    .expect("Too few NNAPI operation enums were provided.");
 
                 quote! (
                     #stack_test_block {
                         self.retrieve_with_init::<T, #output_generic>(#output_generic::LEN, |out| {
+                            let mut model = self.model.borrow_mut();
 
+                            model
+                                .add_operation(
+                                    #op_enum,
+                                    // &[lhs.ptr.idx, rhs.ptr.idx/*, activation_idx*/],
+                                    &#param_idents,
+                                    &[out.ptr.idx],
+                                )
+                                .unwrap();
                         })
                     }
                 )
