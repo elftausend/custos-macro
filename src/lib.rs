@@ -1,7 +1,7 @@
+use proc_macro2::{TokenStream, Ident};
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, ItemImpl, ItemFn};
+use syn::{parse_macro_input, ExprArray, ItemFn, ItemImpl, ItemTrait, Signature, TraitItem};
 
-#[proc_macro_attribute]
 /// Expands a `CPU` implementation to a `Stack` and `CPU` implementation.
 ///
 /// # Example
@@ -19,16 +19,16 @@ use syn::{parse_macro_input, ItemImpl, ItemFn};
 ///         cpu_element_wise(lhs, rhs, &mut out, |o, a, b| *o = a + b);
 ///         out
 ///     }
-/// 
+///
 ///     fn mul(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, CPU, S> {
 ///         let mut out = self.retrieve(lhs.len, (lhs, rhs));
 ///         cpu_element_wise(lhs, rhs, &mut out, |o, a, b| *o = a * b);
 ///         out
 ///     }
 /// }
-/// 
+///
 /// '#[impl_stack]' expands the implementation above to the following 'Stack' implementation:
-/// 
+///
 /// impl<T, D, S> ElementWise<T, D, S> for Stack
 /// where
 ///     T: Number,
@@ -40,28 +40,29 @@ use syn::{parse_macro_input, ItemImpl, ItemFn};
 ///         cpu_element_wise(lhs, rhs, &mut out, |o, a, b| *o = a + b);
 ///         out
 ///     }
-/// 
+///
 ///     fn mul(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, Stack, S> {
 ///         let mut out = self.retrieve(lhs.len, (lhs, rhs));
 ///         cpu_element_wise(lhs, rhs, &mut out, |o, a, b| *o = a * b);
 ///         out
 ///     }
 /// }
-/// 
+///
 /// // Now is it possible to execute this operations with a CPU and Stack device.
 ///
 /// ```
+#[proc_macro_attribute]
 pub fn impl_stack(
     _attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     let input = parse_macro_input!(item as ItemImpl);
-    proc_macro::TokenStream::from(add_stack_impl_simpl(input))
+    proc_macro::TokenStream::from(add_stack_impl_simple(input))
 }
 
 const ERROR_MSG: &str = "Can't use #[impl_stack] on this implement block.";
 
-fn add_stack_impl_simpl(impl_block: ItemImpl) -> proc_macro2::TokenStream {
+fn add_stack_impl_simple(impl_block: ItemImpl) -> proc_macro2::TokenStream {
     let stack_impl_block = impl_block
         .to_token_stream()
         .to_string()
@@ -106,6 +107,145 @@ fn add_stack_cpu_test(input: ItemFn) -> proc_macro2::TokenStream {
 
         #[cfg(feature = "stack")]
         #stack_test_block
+    }
+}
+
+/// does not support constants or type definitions
+/// the output shape should be determined by "OS" or "S"
+#[proc_macro_attribute]
+pub fn impl_nnapi_op(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(item as ItemTrait);
+    proc_macro::TokenStream::from(add_nnapi_op_impl(input, attr.into()))
+}
+
+fn add_nnapi_op_impl(
+    mut input: ItemTrait,
+    attr: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    let attr = attr
+        .into_iter()
+        .map(|attr| match attr {
+            proc_macro2::TokenTree::Ident(ident) => quote!(OperationCode::#ident),
+            proc_macro2::TokenTree::Punct(punct) => quote!(#punct),
+            _ => panic!("Invalid"),
+        })
+        .collect::<proc_macro2::TokenStream>();
+
+    let array = quote! {
+        [#attr]
+    };
+
+    let array = syn::parse2::<ExprArray>(array).unwrap();
+
+    array.elems.into_iter();
+
+    let ident = &input.ident;
+
+    let type_params = input.generics.type_params().collect::<Vec<_>>();
+    let type_params_len = type_params.len();
+
+    let mut output_generic = "S";
+
+    let ident_generics =
+        type_params[..type_params.len() - 1]
+            .into_iter()
+            .fold(quote!(), |mut acc, param| {
+                let ident = &param.ident;
+
+                // if the output shape is not the same as S
+                if ident.to_string() == "OS" {
+                    output_generic = "OS"
+                }
+
+                acc.extend(quote!(#ident,));
+                acc
+            });
+
+    let rhs_generics = quote!(
+        <#ident_generics>
+    );
+
+    let output_generic: Ident = syn::parse_str(output_generic).expect("Should be 'S' or 'OS', which is fine to parse to an Ident");
+
+    let lhs_generics = &input
+        .generics
+        .params
+        .iter_mut()
+        .take(type_params_len - 1)
+        .fold(quote!(), |mut acc, param| {
+            let param = match param {
+                syn::GenericParam::Type(ty) => {
+                    ty.default = None;
+                    ty.to_token_stream()
+                },
+                _ => param.to_token_stream()
+            };
+            acc.extend(quote!(#param,));
+            acc
+        });
+
+    // panic!("lhs_generic: {:?}", lhs_generics.to_string());
+
+
+
+    // panic!("{:?}", generics.type_params().map(|x| x.ident.to_token_stream().to_string()).collect::<Vec<_>>());
+
+    // methods
+    // panic!("{:?}", input.items.iter().map(|x| x.to_token_stream().to_string()).collect::<Vec<_>>());
+
+    let methods = &input
+        .items
+        .iter_mut()
+        .map(|item| match item {
+            TraitItem::Fn(function) => {
+                let fun = &function.sig;
+                let signature_replaced = fun
+                    .to_token_stream()
+                    .to_string()
+                    .replace("D", "custos::NnapiDevice");
+
+                let stack_test_block: Signature = syn::parse_str(&signature_replaced).expect("");
+
+                quote! (
+                    #stack_test_block {
+                        self.retrieve_with_init::<T, #output_generic>(#output_generic::LEN, |out| {
+
+                        })
+                    }
+                )
+                // panic!("{:?}", function.sig.to_token_stream().to_string());
+                // function.to_token_stream()
+            }
+            _ => panic!("This trait is not supported for this macro."),
+        })
+        .collect::<TokenStream>();
+
+    /*panic!(
+        "{}",
+        quote! {
+            #input
+
+            impl <#lhs_generics> #ident #rhs_generics for custos::NnapiDevice
+            where
+                T: custos::AsOperandCode
+            {
+                #methods
+            }
+        }
+    );*/
+
+    quote! {
+        #input
+
+        impl <#lhs_generics> #ident #rhs_generics for custos::NnapiDevice
+        where
+            T: custos::AsOperandCode
+        {
+            #methods
+        }
     }
 }
 
