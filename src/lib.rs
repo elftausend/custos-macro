@@ -129,13 +129,13 @@ fn add_nnapi_op_impl(
 
     let op_enum_ts = attr
         .into_iter()
-        .map(|attr| {
-            op_enum_count += 1;
-            match attr {
-                proc_macro2::TokenTree::Ident(ident) => quote!(OperationCode::#ident),
-                proc_macro2::TokenTree::Punct(punct) => quote!(#punct),
-                _ => panic!("Invalid"),
+        .map(|attr| match attr {
+            proc_macro2::TokenTree::Ident(ident) => {
+                op_enum_count += 1;
+                quote!(OperationCode::#ident)
             }
+            proc_macro2::TokenTree::Punct(punct) => quote!(#punct),
+            _ => panic!("Invalid"),
         })
         .collect::<proc_macro2::TokenStream>();
 
@@ -156,7 +156,7 @@ fn add_nnapi_op_impl(
 
     let mut output_generic = "S";
 
-    let ident_generics =
+    let rhs_generics =
         type_params[..type_params.len() - 1]
             .into_iter()
             .fold(quote!(), |mut acc, param| {
@@ -170,10 +170,6 @@ fn add_nnapi_op_impl(
                 acc.extend(quote!(#ident,));
                 acc
             });
-
-    let rhs_generics = quote!(
-        <#ident_generics>
-    );
 
     let output_generic: Ident = syn::parse_str(output_generic)
         .expect("Should be 'S' or 'OS', which is fine to parse to an Ident");
@@ -194,9 +190,6 @@ fn add_nnapi_op_impl(
             acc.extend(quote!(#param,));
             acc
         });
-
-    // panic!("lhs_generic: {:?}", lhs_generics.to_string());
-    // panic!("{:?}", generics.type_params().map(|x| x.ident.to_token_stream().to_string()).collect::<Vec<_>>());
 
     // methods
     // panic!("{:?}", input.items.iter().map(|x| x.to_token_stream().to_string()).collect::<Vec<_>>());
@@ -227,9 +220,10 @@ fn add_nnapi_op_impl(
                     })
                     .collect::<Vec<_>>();
 
-                let param_idents = param_idents.into_iter().map(|param_ident| quote!(#param_ident.ptr.idx,)).collect::<TokenStream>();
-
-                let param_idents = quote!([#param_idents]);
+                let param_idents = param_idents
+                    .into_iter()
+                    .map(|param_ident| quote!(#param_ident.ptr.idx,))
+                    .collect::<TokenStream>();
 
                 let signature_replaced = fun
                     .to_token_stream()
@@ -241,47 +235,67 @@ fn add_nnapi_op_impl(
                     .next()
                     .expect("Too few NNAPI operation enums were provided.");
 
+                // panic!("{}", op_enum.to_token_stream().to_string().as_str());
+
+                let (may_add_activation_operand, input_idxs, unimpl) = match op_enum
+                    .to_token_stream()
+                    .to_string()
+                    .as_str()
+                {
+                    "OperationCode :: ANEURALNETWORKS_ADD"
+                    | "OperationCode :: ANEURALNETWORKS_MUL"
+                    | "OperationCode :: ANEURALNETWORKS_DIV" => (
+                        Some(quote! {
+                            let activation_idx = self.add_operand(&Operand::activation()).unwrap();
+
+                            model
+                                .set_activation_operand_value(activation_idx as i32)
+                                .unwrap();
+                        }),
+                        quote!([lhs.ptr.idx, rhs.ptr.idx, activation_idx]),
+                        None,
+                    ),
+                    "OperationCode :: None" => (
+                        None,
+                        quote!([]),
+                        Some(quote!(
+                            unimplemented!("This operation is not supported by NNAPI.");
+                            #[allow(unreachable_code)]
+                        )),
+                    ),
+                    _ => (None, quote!([#param_idents]), None),
+                };
+
                 quote! (
                     #stack_test_block {
+                        #unimpl
                         self.retrieve_with_init::<T, #output_generic>(#output_generic::LEN, |out| {
                             let mut model = self.model.borrow_mut();
+
+                            #may_add_activation_operand
 
                             model
                                 .add_operation(
                                     #op_enum,
+                                    &#input_idxs,
                                     // &[lhs.ptr.idx, rhs.ptr.idx/*, activation_idx*/],
-                                    &#param_idents,
+                                    // &[#param_idents],
                                     &[out.ptr.idx],
                                 )
                                 .unwrap();
                         })
                     }
                 )
-                // panic!("{:?}", function.sig.to_token_stream().to_string());
-                // function.to_token_stream()
             }
             _ => panic!("This trait is not supported for this macro."),
         })
         .collect::<TokenStream>();
 
-    /*panic!(
-        "{}",
-        quote! {
-            #input
-
-            impl <#lhs_generics> #ident #rhs_generics for custos::NnapiDevice
-            where
-                T: custos::AsOperandCode
-            {
-                #methods
-            }
-        }
-    );*/
-
     quote! {
         #input
 
-        impl <#lhs_generics> #ident #rhs_generics for custos::NnapiDevice
+        #[cfg(feature = "nnapi")]
+        impl <#lhs_generics> #ident <#rhs_generics> for custos::NnapiDevice
         where
             T: custos::AsOperandCode
         {
