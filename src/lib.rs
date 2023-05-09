@@ -1,6 +1,6 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, ExprArray, ItemFn, ItemImpl, ItemTrait, Signature, TraitItem};
+use syn::{parse_macro_input, ExprArray, ItemFn, ItemImpl, ItemTrait, TraitItem, punctuated::Punctuated, FnArg, token::Comma, parse::Parser};
 
 /// Expands a `CPU` implementation to a `Stack` and `CPU` implementation.
 ///
@@ -110,7 +110,7 @@ fn add_stack_cpu_test(input: ItemFn) -> proc_macro2::TokenStream {
     }
 }
 
-/// does not support constants or type definitions
+/// does not support constants or type definitions.
 /// the output shape should be determined by "OS" or "S"
 #[proc_macro_attribute]
 pub fn impl_nnapi_op(
@@ -125,6 +125,7 @@ fn add_nnapi_op_impl(
     mut input: ItemTrait,
     attr: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
+
     let mut op_enum_count = 0;
 
     let op_enum_ts = attr
@@ -174,7 +175,7 @@ fn add_nnapi_op_impl(
     let output_generic: Ident = syn::parse_str(output_generic)
         .expect("Should be 'S' or 'OS', which is fine to parse to an Ident");
 
-    let lhs_generics = &input
+    let lhs_generics = &input.clone()
         .generics
         .params
         .iter_mut()
@@ -201,7 +202,15 @@ fn add_nnapi_op_impl(
         .iter_mut()
         .map(|item| match item {
             TraitItem::Fn(function) => {
-                let fun = &function.sig;
+                let mut fun = function.sig.clone();
+                      
+                let parser = Punctuated::<FnArg, Comma>::parse_terminated;
+                let replace = fun.inputs.to_token_stream().to_string().replace("D", "custos::NnapiDevice");
+                fun.inputs = parser.parse_str(&replace).expect("Invalid");
+
+                if let syn::ReturnType::Type(_, ty) = &mut fun.output {
+                    *ty = syn::parse_str(&ty.into_token_stream().to_string().replace("D", "custos::NnapiDevice")).unwrap();
+                }
 
                 let param_idents = fun
                     .inputs
@@ -224,13 +233,7 @@ fn add_nnapi_op_impl(
                     .into_iter()
                     .map(|param_ident| quote!(#param_ident.ptr.idx,))
                     .collect::<TokenStream>();
-
-                let signature_replaced = fun
-                    .to_token_stream()
-                    .to_string()
-                    .replace("D", "custos::NnapiDevice");
-
-                let stack_test_block: Signature = syn::parse_str(&signature_replaced).expect("");
+                
                 let op_enum = op_enums
                     .next()
                     .expect("Too few NNAPI operation enums were provided.");
@@ -267,7 +270,7 @@ fn add_nnapi_op_impl(
                 };
 
                 quote! (
-                    #stack_test_block {
+                    #fun {
                         #unimpl
                         self.retrieve_with_init::<T, #output_generic>(#output_generic::LEN, |out| {
                             let mut model = self.model.borrow_mut();
@@ -290,6 +293,18 @@ fn add_nnapi_op_impl(
             _ => panic!("This trait is not supported for this macro."),
         })
         .collect::<TokenStream>();
+
+    /*panic!("{}", quote! {
+        #input
+
+        #[cfg(feature = "nnapi")]
+        impl <#lhs_generics> #ident <#rhs_generics> for custos::NnapiDevice
+        where
+            T: custos::AsOperandCode
+        {
+            #methods
+        }
+    });*/
 
     quote! {
         #input
