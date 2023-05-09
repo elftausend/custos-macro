@@ -110,8 +110,78 @@ fn add_stack_cpu_test(input: ItemFn) -> proc_macro2::TokenStream {
     }
 }
 
-/// does not support constants or type definitions.
-/// the output shape should be determined by "OS" or "S"
+/// Implements a custos operation trait for the custos `NNapiDevice` using an array of `OperationCode`.
+/// Does not support constants or type definitions.
+/// The output shape should be determined by "OS" or "S".
+/// 
+/// # Example
+/// 
+/// // --- before ---
+/// 
+/// ```
+/// pub trait BinaryElementWise2<T, S: Shape = (), D: Device = Self>: Device {
+///     fn add(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
+///     fn mul(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
+///     fn sub(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
+/// }
+/// 
+/// 
+/// 
+/// #[cfg(feature = "nnapi")]
+/// impl<T: custos::nnapi::AsOperandCode, S: Shape> BinaryElementWise2<T, S> for custos::NnapiDevice {
+///     fn add(&self, lhs: &Buffer<T, Self, S>, rhs: &Buffer<T, Self, S>) -> Buffer<T, Self, S> {
+///         self.retrieve_with_init::<T, S>(S::LEN, |out| {
+///             let mut model = self.model.borrow_mut();
+///             let activation_idx = self.add_operand(&Operand::activation()).unwrap();
+/// 
+///             model
+///                 .set_activation_operand_value(activation_idx as i32)
+///                 .unwrap();
+///             model
+///                 .add_operation(
+///                     OperationCode::ANEURALNETWORKS_ADD,
+///                     &[lhs.ptr.idx, rhs.ptr.idx, activation_idx],
+///                     &[out.ptr.idx],
+///                 )
+///                 .unwrap();
+///         })
+///     }
+/// 
+///     fn mul(&self, lhs: &Buffer<T, Self, S>, rhs: &Buffer<T, Self, S>) -> Buffer<T, Self, S> {
+///         self.retrieve_with_init::<T, S>(S::LEN, |out| {
+///             let mut model = self.model.borrow_mut();
+///             let activation_idx = self.add_operand(&Operand::activation()).unwrap();
+/// 
+///             model
+///                 .set_activation_operand_value(activation_idx as i32)
+///                 .unwrap();
+///             model
+///                 .add_operation(
+///                     OperationCode::ANEURALNETWORKS_MUL,
+///                     &[lhs.ptr.idx, rhs.ptr.idx, activation_idx],
+///                     &[out.ptr.idx],
+///                 )
+///                 .unwrap();
+///         })
+///     }
+/// 
+///     fn sub(&self, lhs: &Buffer<T, Self, S>, rhs: &Buffer<T, Self, S>) -> Buffer<T, Self, S> {
+///         unimplemented!("This operation is not supported by NNAPI.")
+///     }
+/// }
+/// 
+/// // --- after ---
+/// 
+/// // This macro simplifies this implementation into a single macro line:
+/// 
+/// #[impl_nnapi_op(ANEURALNETWORKS_ADD, ANEURALNETWORKS_MUL, None)]
+/// pub trait BinaryElementWise2<T, S: Shape = (), D: Device = Self>: Device {
+///     fn add(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
+///     fn mul(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
+///     fn sub(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
+/// }
+/// 
+/// ```
 #[proc_macro_attribute]
 pub fn impl_nnapi_op(
     attr: proc_macro::TokenStream,
