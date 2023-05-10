@@ -1,6 +1,12 @@
-use proc_macro2::{Ident, TokenStream};
+mod impl_nnapi_op;
+mod impl_using_autograd;
+mod trait_builds;
+
+use impl_nnapi_op::add_nnapi_op_impl;
+
+use impl_using_autograd::add_maybe_empty_trait;
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, ExprArray, ItemFn, ItemImpl, ItemTrait, TraitItem, punctuated::Punctuated, FnArg, token::Comma, parse::Parser};
+use syn::{parse_macro_input, ItemFn, ItemImpl, ItemTrait};
 
 /// Expands a `CPU` implementation to a `Stack` and `CPU` implementation.
 ///
@@ -113,27 +119,27 @@ fn add_stack_cpu_test(input: ItemFn) -> proc_macro2::TokenStream {
 /// Implements a custos operation trait for the custos `NNapiDevice` using an array of `OperationCode`.
 /// Does not support constants or type definitions.
 /// The output shape should be determined by "OS" or "S".
-/// 
+///
 /// # Example
-/// 
+///
 /// // --- before ---
-/// 
+///
 /// ```
 /// pub trait BinaryElementWise2<T, S: Shape = (), D: Device = Self>: Device {
 ///     fn add(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
 ///     fn mul(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
 ///     fn sub(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
 /// }
-/// 
-/// 
-/// 
+///
+///
+///
 /// #[cfg(feature = "nnapi")]
 /// impl<T: custos::nnapi::AsOperandCode, S: Shape> BinaryElementWise2<T, S> for custos::NnapiDevice {
 ///     fn add(&self, lhs: &Buffer<T, Self, S>, rhs: &Buffer<T, Self, S>) -> Buffer<T, Self, S> {
 ///         self.retrieve_with_init::<T, S>(S::LEN, |out| {
 ///             let mut model = self.model.borrow_mut();
 ///             let activation_idx = self.add_operand(&Operand::activation()).unwrap();
-/// 
+///
 ///             model
 ///                 .set_activation_operand_value(activation_idx as i32)
 ///                 .unwrap();
@@ -146,12 +152,12 @@ fn add_stack_cpu_test(input: ItemFn) -> proc_macro2::TokenStream {
 ///                 .unwrap();
 ///         })
 ///     }
-/// 
+///
 ///     fn mul(&self, lhs: &Buffer<T, Self, S>, rhs: &Buffer<T, Self, S>) -> Buffer<T, Self, S> {
 ///         self.retrieve_with_init::<T, S>(S::LEN, |out| {
 ///             let mut model = self.model.borrow_mut();
 ///             let activation_idx = self.add_operand(&Operand::activation()).unwrap();
-/// 
+///
 ///             model
 ///                 .set_activation_operand_value(activation_idx as i32)
 ///                 .unwrap();
@@ -164,23 +170,23 @@ fn add_stack_cpu_test(input: ItemFn) -> proc_macro2::TokenStream {
 ///                 .unwrap();
 ///         })
 ///     }
-/// 
+///
 ///     fn sub(&self, lhs: &Buffer<T, Self, S>, rhs: &Buffer<T, Self, S>) -> Buffer<T, Self, S> {
 ///         unimplemented!("This operation is not supported by NNAPI.")
 ///     }
 /// }
-/// 
+///
 /// // --- after ---
-/// 
+///
 /// // This macro simplifies this implementation into a single macro line:
-/// 
+///
 /// #[impl_nnapi_op(ANEURALNETWORKS_ADD, ANEURALNETWORKS_MUL, None)]
 /// pub trait BinaryElementWise2<T, S: Shape = (), D: Device = Self>: Device {
 ///     fn add(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
 ///     fn mul(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
 ///     fn sub(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
 /// }
-/// 
+///
 /// ```
 #[proc_macro_attribute]
 pub fn impl_nnapi_op(
@@ -191,202 +197,13 @@ pub fn impl_nnapi_op(
     proc_macro::TokenStream::from(add_nnapi_op_impl(input, attr.into()))
 }
 
-fn add_nnapi_op_impl(
-    mut input: ItemTrait,
-    attr: proc_macro2::TokenStream,
-) -> proc_macro2::TokenStream {
-
-    let mut op_enum_count = 0;
-
-    let op_enum_ts = attr
-        .into_iter()
-        .map(|attr| match attr {
-            proc_macro2::TokenTree::Ident(ident) => {
-                op_enum_count += 1;
-                quote!(OperationCode::#ident)
-            }
-            proc_macro2::TokenTree::Punct(punct) => quote!(#punct),
-            _ => panic!("Invalid"),
-        })
-        .collect::<proc_macro2::TokenStream>();
-
-    if op_enum_count != input.items.len() {
-        panic!("The length of the provided operations does not match with the number of methods.")
-    }
-
-    let op_enums_ts_arr = quote! {
-        [#op_enum_ts]
-    };
-
-    let array = syn::parse2::<ExprArray>(op_enums_ts_arr).unwrap();
-
-    let ident = &input.ident;
-
-    let type_params = input.generics.type_params().collect::<Vec<_>>();
-    let type_params_len = type_params.len();
-
-    let mut output_generic = "S";
-
-    let rhs_generics =
-        type_params[..type_params.len() - 1]
-            .into_iter()
-            .fold(quote!(), |mut acc, param| {
-                let ident = &param.ident;
-
-                // if the output shape is not the same as S
-                if ident.to_string() == "OS" {
-                    output_generic = "OS"
-                }
-
-                acc.extend(quote!(#ident,));
-                acc
-            });
-
-    let output_generic: Ident = syn::parse_str(output_generic)
-        .expect("Should be 'S' or 'OS', which is fine to parse to an Ident");
-
-    let lhs_generics = &input.clone()
-        .generics
-        .params
-        .iter_mut()
-        .take(type_params_len - 1)
-        .fold(quote!(), |mut acc, param| {
-            let param = match param {
-                syn::GenericParam::Type(ty) => {
-                    ty.default = None;
-                    ty.to_token_stream()
-                }
-                _ => param.to_token_stream(),
-            };
-            acc.extend(quote!(#param,));
-            acc
-        });
-
-    // methods
-    // panic!("{:?}", input.items.iter().map(|x| x.to_token_stream().to_string()).collect::<Vec<_>>());
-
-    let mut op_enums = array.elems.into_iter();
-
-    let methods = &input
-        .items
-        .iter_mut()
-        .map(|item| match item {
-            TraitItem::Fn(function) => {
-                let mut fun = function.sig.clone();
-                      
-                let parser = Punctuated::<FnArg, Comma>::parse_terminated;
-                let replace = fun.inputs.to_token_stream().to_string().replace("D", "custos::NnapiDevice");
-                fun.inputs = parser.parse_str(&replace).expect("Invalid");
-
-                if let syn::ReturnType::Type(_, ty) = &mut fun.output {
-                    *ty = syn::parse_str(&ty.into_token_stream().to_string().replace("D", "custos::NnapiDevice")).unwrap();
-                }
-
-                let param_idents = fun
-                    .inputs
-                    .iter()
-                    .flat_map(|input| match input {
-                        syn::FnArg::Typed(ty) => {
-                            if !ty.ty.to_token_stream().to_string().contains("Buffer <") {
-                                return None;
-                            }
-                            Some(
-                                syn::parse2::<Ident>(ty.pat.to_token_stream())
-                                    .expect("Invalid ident"),
-                            )
-                        }
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>();
-
-                let param_idents = param_idents
-                    .into_iter()
-                    .map(|param_ident| quote!(#param_ident.ptr.idx,))
-                    .collect::<TokenStream>();
-                
-                let op_enum = op_enums
-                    .next()
-                    .expect("Too few NNAPI operation enums were provided.");
-
-                // panic!("{}", op_enum.to_token_stream().to_string().as_str());
-
-                let (may_add_activation_operand, input_idxs, unimpl) = match op_enum
-                    .to_token_stream()
-                    .to_string()
-                    .as_str()
-                {
-                    "OperationCode :: ANEURALNETWORKS_ADD"
-                    | "OperationCode :: ANEURALNETWORKS_MUL"
-                    | "OperationCode :: ANEURALNETWORKS_DIV" => (
-                        Some(quote! {
-                            let activation_idx = self.add_operand(&Operand::activation()).unwrap();
-
-                            model
-                                .set_activation_operand_value(activation_idx as i32)
-                                .unwrap();
-                        }),
-                        quote!([lhs.ptr.idx, rhs.ptr.idx, activation_idx]),
-                        None,
-                    ),
-                    "OperationCode :: None" => (
-                        None,
-                        quote!([]),
-                        Some(quote!(
-                            unimplemented!("This operation is not supported by NNAPI.");
-                            #[allow(unreachable_code)]
-                        )),
-                    ),
-                    _ => (None, quote!([#param_idents]), None),
-                };
-
-                quote! (
-                    #fun {
-                        #unimpl
-                        self.retrieve_with_init::<T, #output_generic>(#output_generic::LEN, |out| {
-                            let mut model = self.model.borrow_mut();
-
-                            #may_add_activation_operand
-
-                            model
-                                .add_operation(
-                                    #op_enum,
-                                    &#input_idxs,
-                                    // &[lhs.ptr.idx, rhs.ptr.idx/*, activation_idx*/],
-                                    // &[#param_idents],
-                                    &[out.ptr.idx],
-                                )
-                                .unwrap();
-                        })
-                    }
-                )
-            }
-            _ => panic!("This trait is not supported for this macro."),
-        })
-        .collect::<TokenStream>();
-
-    /*panic!("{}", quote! {
-        #input
-
-        #[cfg(feature = "nnapi")]
-        impl <#lhs_generics> #ident <#rhs_generics> for custos::NnapiDevice
-        where
-            T: custos::AsOperandCode
-        {
-            #methods
-        }
-    });*/
-
-    quote! {
-        #input
-
-        #[cfg(feature = "nnapi")]
-        impl <#lhs_generics> #ident <#rhs_generics> for custos::NnapiDevice
-        where
-            T: custos::AsOperandCode
-        {
-            #methods
-        }
-    }
+#[proc_macro_attribute]
+pub fn using_autograd(
+    _attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(item as ItemTrait);
+    proc_macro::TokenStream::from(add_maybe_empty_trait(input))
 }
 
 /*
