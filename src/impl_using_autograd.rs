@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::ItemTrait;
 
-use crate::trait_builds::extract_lhs_generics_to_len;
+use crate::trait_builds::{extract_lhs_generics_to_len, extract_rhs_generics_to_len};
 
 pub fn add_maybe_empty_trait(input: ItemTrait) -> TokenStream {
     // panic!("{}", input.supertraits.to_token_stream().to_string());
@@ -14,7 +14,8 @@ pub fn add_maybe_empty_trait(input: ItemTrait) -> TokenStream {
     let type_params_len = input.generics.type_params().count();
     let lhs_generics = extract_lhs_generics_to_len(input.generics.clone(), type_params_len);
 
-    panic!("gens: {:?}", generics.to_token_stream().to_string());
+    let rhs_generics = extract_rhs_generics_to_len(&input.generics, type_params_len, |_| ());    
+    // panic!("gens: {:?}", lhs_generics.to_token_stream().to_string());
 
     quote! {
         #[cfg(feature="autograd")]
@@ -24,6 +25,7 @@ pub fn add_maybe_empty_trait(input: ItemTrait) -> TokenStream {
         pub trait #ident #generics : #super_traits {}
 
         #[cfg(not(feature="autograd"))]
+        impl <#lhs_generics> #ident <#rhs_generics> for D {}
 
     }
 }
