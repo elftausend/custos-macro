@@ -125,7 +125,7 @@ fn add_stack_cpu_test(input: ItemFn) -> proc_macro2::TokenStream {
 /// // --- before ---
 ///
 /// ```
-/// pub trait BinaryElementWise2<T, S: Shape = (), D: Device = Self>: Device {
+/// pub trait BinaryElementWise<T, S: Shape = (), D: Device = Self>: Device {
 ///     fn add(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
 ///     fn mul(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
 ///     fn sub(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
@@ -134,11 +134,11 @@ fn add_stack_cpu_test(input: ItemFn) -> proc_macro2::TokenStream {
 ///
 ///
 /// #[cfg(feature = "nnapi")]
-/// impl<T: custos::nnapi::AsOperandCode, S: Shape> BinaryElementWise2<T, S> for custos::NnapiDevice {
+/// impl<T: custos::nnapi::AsOperandCode, S: Shape> BinaryElementWise<T, S> for custos::NnapiDevice {
 ///     fn add(&self, lhs: &Buffer<T, Self, S>, rhs: &Buffer<T, Self, S>) -> Buffer<T, Self, S> {
 ///         self.retrieve_with_init::<T, S>(S::LEN, |out| {
-///             let mut model = self.model.borrow_mut();
 ///             let activation_idx = self.add_operand(&Operand::activation()).unwrap();
+///             let mut model = self.model.borrow_mut();
 ///
 ///             model
 ///                 .set_activation_operand_value(activation_idx as i32)
@@ -155,8 +155,8 @@ fn add_stack_cpu_test(input: ItemFn) -> proc_macro2::TokenStream {
 ///
 ///     fn mul(&self, lhs: &Buffer<T, Self, S>, rhs: &Buffer<T, Self, S>) -> Buffer<T, Self, S> {
 ///         self.retrieve_with_init::<T, S>(S::LEN, |out| {
-///             let mut model = self.model.borrow_mut();
 ///             let activation_idx = self.add_operand(&Operand::activation()).unwrap();
+///             let mut model = self.model.borrow_mut();
 ///
 ///             model
 ///                 .set_activation_operand_value(activation_idx as i32)
@@ -172,7 +172,7 @@ fn add_stack_cpu_test(input: ItemFn) -> proc_macro2::TokenStream {
 ///     }
 ///
 ///     fn sub(&self, lhs: &Buffer<T, Self, S>, rhs: &Buffer<T, Self, S>) -> Buffer<T, Self, S> {
-///         unimplemented!("This operation is not supported by NNAPI.")
+///         unimplemented!("This operation is not supported by NNAPI. (it is, however, this is only an example)")
 ///     }
 /// }
 ///
@@ -181,7 +181,7 @@ fn add_stack_cpu_test(input: ItemFn) -> proc_macro2::TokenStream {
 /// // This macro simplifies this implementation into a single macro line:
 ///
 /// #[impl_nnapi_op(ANEURALNETWORKS_ADD, ANEURALNETWORKS_MUL, None)]
-/// pub trait BinaryElementWise2<T, S: Shape = (), D: Device = Self>: Device {
+/// pub trait BinaryElementWise<T, S: Shape = (), D: Device = Self>: Device {
 ///     fn add(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
 ///     fn mul(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
 ///     fn sub(&self, lhs: &Buffer<T, D, S>, rhs: &Buffer<T, D, S>) -> Buffer<T, D, S>;
