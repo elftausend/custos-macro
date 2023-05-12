@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
+use quote::quote;
 use syn::ItemTrait;
 
 use crate::trait_builds::{extract_lhs_generics_to_len, extract_rhs_generics_to_len};
@@ -26,6 +26,5 @@ pub fn add_maybe_empty_trait(input: ItemTrait) -> TokenStream {
 
         #[cfg(not(feature="autograd"))]
         impl <#lhs_generics> #ident <#rhs_generics> for D {}
-
     }
 }

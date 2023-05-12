@@ -110,7 +110,7 @@ pub fn add_nnapi_op_impl(
 
                 // panic!("{}", op_enum.to_token_stream().to_string().as_str());
 
-                let (may_add_activation_operand, input_idxs, unimpl) = match op_enum
+                let (before_action, input_idxs, unimpl) = match op_enum
                     .to_token_stream()
                     .to_string()
                     .as_str()
@@ -120,42 +120,42 @@ pub fn add_nnapi_op_impl(
                     | "OperationCode :: ANEURALNETWORKS_DIV" => (
                         Some(quote! {
                             let activation_idx = self.add_operand(&Operand::activation()).unwrap();
-
+                            let mut model = self.model.borrow_mut();
                             model
                                 .set_activation_operand_value(activation_idx as i32)
-                                .unwrap();
+                                .expect("Cannot set activation operand at specified index.");
                         }),
                         quote!([lhs.ptr.idx, rhs.ptr.idx, activation_idx]),
                         None,
                     ),
                     "OperationCode :: None" => (
-                        None,
+                        Some(quote! {
+                            let mut model = self.model.borrow_mut();
+                        }),
                         quote!([]),
                         Some(quote!(
                             unimplemented!("This operation is not supported by NNAPI.");
                             #[allow(unreachable_code)]
                         )),
                     ),
-                    _ => (None, quote!([#param_idents]), None),
+                    _ => (Some(quote! {
+                        let mut model = self.model.borrow_mut();
+                    }), quote!([#param_idents]), None),
                 };
 
                 quote! (
                     #fun {
                         #unimpl
                         self.retrieve_with_init::<T, #output_generic>(#output_generic::LEN, |out| {
-                            let mut model = self.model.borrow_mut();
-
-                            #may_add_activation_operand
+                            #before_action
 
                             model
                                 .add_operation(
                                     #op_enum,
                                     &#input_idxs,
-                                    // &[lhs.ptr.idx, rhs.ptr.idx/*, activation_idx*/],
-                                    // &[#param_idents],
                                     &[out.ptr.idx],
                                 )
-                                .unwrap();
+                                .expect(&format!("Could not add operation {:?}", #op_enum));
                         })
                     }
                 )
