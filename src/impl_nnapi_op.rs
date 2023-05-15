@@ -126,26 +126,30 @@ pub fn add_nnapi_op_impl(
                                 .expect("Cannot set activation operand at specified index.");
                         }),
                         quote!([lhs.ptr.idx, rhs.ptr.idx, activation_idx]),
-                        None,
+                        false,
                     ),
                     "OperationCode :: None" => (
                         Some(quote! {
                             let mut model = self.model.borrow_mut();
                         }),
                         quote!([]),
-                        Some(quote!(
-                            unimplemented!("This operation is not supported by NNAPI.");
-                            #[allow(unreachable_code)]
-                        )),
+                        true,
                     ),
                     _ => (Some(quote! {
                         let mut model = self.model.borrow_mut();
-                    }), quote!([#param_idents]), None),
+                    }), quote!([#param_idents]), false),
                 };
+
+                if unimpl {
+                    quote! {
+                        #fun {
+                            unimplemented!("This operation is not supported by NNAPI.");                    
+                        }
+                    }
+                } else {
 
                 quote! (
                     #fun {
-                        #unimpl
                         self.retrieve_with_init::<T, #output_generic>(#output_generic::LEN, |out| {
                             #before_action
 
@@ -159,22 +163,26 @@ pub fn add_nnapi_op_impl(
                         })
                     }
                 )
+                }
             }
             _ => panic!("This trait is not supported for this macro."),
         })
         .collect::<TokenStream>();
 
-    /*panic!("{}", quote! {
-        #input
+    /*panic!(
+        "{}",
+        quote! {
+            #input
 
-        #[cfg(feature = "nnapi")]
-        impl <#lhs_generics> #ident <#rhs_generics> for custos::NnapiDevice
-        where
-            T: custos::AsOperandCode
-        {
-            #methods
+            #[cfg(feature = "nnapi")]
+            impl <#lhs_generics> #ident <#rhs_generics> for custos::NnapiDevice
+            where
+                T: custos::AsOperandCode
+            {
+                #methods
+            }
         }
-    });*/
+    );*/
 
     quote! {
         #input

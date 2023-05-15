@@ -14,7 +14,7 @@ pub fn add_maybe_empty_trait(input: ItemTrait) -> TokenStream {
     let type_params_len = input.generics.type_params().count();
     let lhs_generics = extract_lhs_generics_to_len(input.generics.clone(), type_params_len);
 
-    let rhs_generics = extract_rhs_generics_to_len(&input.generics, type_params_len, |_| ());    
+    let rhs_generics = extract_rhs_generics_to_len(&input.generics, type_params_len, |_| ());
     // panic!("gens: {:?}", lhs_generics.to_token_stream().to_string());
 
     quote! {
