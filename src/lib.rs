@@ -1,12 +1,68 @@
 mod impl_nnapi_op;
 mod impl_using_autograd;
 mod trait_builds;
+mod cuda;
+
+use std::{process::Command, hash::{Hash, Hasher}, fmt::Debug};
 
 use impl_nnapi_op::add_nnapi_op_impl;
 
 use impl_using_autograd::add_maybe_empty_trait;
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, ItemFn, ItemImpl, ItemTrait};
+use syn::{parse_macro_input, ItemFn, ItemImpl, ItemTrait, LitStr};
+
+
+/*struct MyMacroInput {
+    src: String
+}
+
+impl syn::parse::Parse for MyMacroInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+
+        let span = input.span();
+        let src: String = Punctuated::<LitStr, Token![+]>::parse_separated_nonempty(input)?
+            .iter()
+            .map(LitStr::value)
+            .collect();
+
+        Ok(MyMacroInput {})
+    }
+}*/
+
+
+#[proc_macro]
+pub fn cuda(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    //let input = syn::parse_macro_input!(input as LitStr).value();
+    let input = input.to_string();
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    input.hash(&mut hasher);
+    let hash = hasher.finish();
+
+    let input_file_path = format!("./target/{hash}.cu");
+
+    let out_file_path = format!("./target/{hash}.ptx");
+
+    std::fs::write(&input_file_path, input.as_bytes()).unwrap();
+
+    let out = Command::new("nvcc")
+        .arg("-c")
+        .arg(input_file_path)
+        .arg("-o")
+        .arg(&out_file_path)
+        .arg("--ptx")
+        .output().unwrap();
+    
+    let stderr_utf8 = std::str::from_utf8(&out.stderr).unwrap();
+    if !out.stderr.is_empty() {
+        panic!("{stderr_utf8}")
+    }
+
+    let ptx_src = std::fs::read_to_string(out_file_path).unwrap();
+
+    ptx_src.to_token_stream().into()
+}
+
 
 /// Expands a `CPU` implementation to a `Stack` and `CPU` implementation.
 ///
