@@ -32,8 +32,12 @@ impl syn::parse::Parse for MyMacroInput {
 
 #[proc_macro]
 pub fn cuda(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    //let input = syn::parse_macro_input!(input as LitStr).value();
-    let input = input.to_string();
+    // let input = syn::parse_macro_input!(input as LitStr).value();
+    let input = match syn::parse::<LitStr>(input.clone()) {
+        Ok(syntax_tree) => syntax_tree.value(),
+        Err(_) => input.to_string(),
+    };
+    // let input = input.to_string();
 
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     input.hash(&mut hasher);
@@ -60,7 +64,12 @@ pub fn cuda(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     let ptx_src = std::fs::read_to_string(out_file_path).unwrap();
 
-    ptx_src.to_token_stream().into()
+    quote!(
+        custos::cuda::Ptx {
+            src: #ptx_src.to_string()
+        }
+    ).into()
+    // ptx_src.to_token_stream().into()
 }
 
 
