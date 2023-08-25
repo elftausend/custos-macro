@@ -3,7 +3,7 @@ mod impl_using_autograd;
 mod trait_builds;
 mod cuda;
 
-use std::{process::Command, hash::{Hash, Hasher}, fmt::Debug};
+use std::{process::Command, hash::{Hash, Hasher}};
 
 use impl_nnapi_op::add_nnapi_op_impl;
 
