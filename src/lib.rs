@@ -1,10 +1,13 @@
+mod add_op;
+mod cuda;
 mod impl_nnapi_op;
 mod impl_using_autograd;
 mod trait_builds;
-mod cuda;
-mod add_op;
 
-use std::{process::Command, hash::{Hash, Hasher}};
+use std::{
+    hash::{Hash, Hasher},
+    process::Command,
+};
 
 use add_op::add_op_expansion;
 use impl_nnapi_op::add_nnapi_op_impl;
@@ -12,7 +15,6 @@ use impl_nnapi_op::add_nnapi_op_impl;
 use impl_using_autograd::add_maybe_empty_trait;
 use quote::{quote, ToTokens};
 use syn::{parse_macro_input, ExprCall, ItemFn, ItemImpl, ItemTrait, LitStr};
-
 
 /*struct MyMacroInput {
     src: String
@@ -30,7 +32,6 @@ impl syn::parse::Parse for MyMacroInput {
         Ok(MyMacroInput {})
     }
 }*/
-
 
 #[proc_macro]
 pub fn cuda(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -57,8 +58,9 @@ pub fn cuda(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         .arg("-o")
         .arg(&out_file_path)
         .arg("--ptx")
-        .output().unwrap();
-    
+        .output()
+        .unwrap();
+
     let stderr_utf8 = std::str::from_utf8(&out.stderr).unwrap();
     if !out.stderr.is_empty() {
         panic!("{stderr_utf8}")
@@ -70,10 +72,10 @@ pub fn cuda(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         custos::cuda::Ptx {
             src: #ptx_src.to_string()
         }
-    ).into()
+    )
+    .into()
     // ptx_src.to_token_stream().into()
 }
-
 
 /// Expands a `CPU` implementation to a `Stack` and `CPU` implementation.
 ///
