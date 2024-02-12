@@ -2,9 +2,11 @@ mod impl_nnapi_op;
 mod impl_using_autograd;
 mod trait_builds;
 mod cuda;
+mod add_op;
 
 use std::{process::Command, hash::{Hash, Hasher}};
 
+use add_op::add_op_expansion;
 use impl_nnapi_op::add_nnapi_op_impl;
 
 use impl_using_autograd::add_maybe_empty_trait;
@@ -269,6 +271,15 @@ pub fn using_autograd(
 ) -> proc_macro::TokenStream {
     let input = parse_macro_input!(item as ItemTrait);
     proc_macro::TokenStream::from(add_maybe_empty_trait(input))
+}
+
+#[proc_macro_attribute]
+pub fn add_op(
+    _attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(item as ItemFn);
+    proc_macro::TokenStream::from(add_op_expansion(input))
 }
 
 /*
