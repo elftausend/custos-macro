@@ -11,7 +11,7 @@ use impl_nnapi_op::add_nnapi_op_impl;
 
 use impl_using_autograd::add_maybe_empty_trait;
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, ItemFn, ItemImpl, ItemTrait, LitStr};
+use syn::{parse_macro_input, ExprCall, ItemFn, ItemImpl, ItemTrait, LitStr};
 
 
 /*struct MyMacroInput {
@@ -273,12 +273,9 @@ pub fn using_autograd(
     proc_macro::TokenStream::from(add_maybe_empty_trait(input))
 }
 
-#[proc_macro_attribute]
-pub fn add_op(
-    _attr: proc_macro::TokenStream,
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    let input = parse_macro_input!(item as ItemFn);
+#[proc_macro]
+pub fn add_op(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(item as ExprCall);
     proc_macro::TokenStream::from(add_op_expansion(input))
 }
 
